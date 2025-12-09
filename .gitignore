@@ -3,13 +3,13 @@
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #
 .utmp/
-/[Ll]ibrary/
-/[Tt]emp/
-/[Oo]bj/
-/[Bb]uild/
-/[Bb]uilds/
-/[Ll]ogs/
-/[Uu]ser[Ss]ettings/
+/Ai-labs/[Ll]ibrary/
+/Ai-labs/[Tt]emp/
+/Ai-labs/[Oo]bj/
+/Ai-labs/[Bb]uild/
+/Ai-labs/[Bb]uilds/
+/Ai-labs/[Ll]ogs/
+/Ai-labs/[Uu]ser[Ss]ettings/
 *.log
 
 # By default unity supports Blender asset imports, *.blend1 blender files do not need to be commited to version control.
@@ -33,6 +33,8 @@
 
 # Visual Studio cache directory
 .vs/
+/Ai-labs/.vs/
+/Ai-labs/.vsconfig
 
 # Gradle cache directory
 .gradle/
