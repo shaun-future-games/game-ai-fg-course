@@ -2,149 +2,268 @@ using UnityEngine;
 using UnityEngine.AI;
 
 
-public enum GuardState
-{
-    Patrolling,
-    Chasing,
-    ReturningToPatrol
-}
+// I used a simple enum and switch statement at first but I wanted to use this 
+//   statemachine so I have better flow between states
 
+
+[RequireComponent(typeof(NavMeshAgent))]
 public class GuardPatrol : MonoBehaviour
 {
+    [Header("Navigation")]
     public Transform[] Waypoints;
     public float WaypointTolerance = 0.5f;
 
-    // state machine variables
-    public GuardState CurrentState = GuardState.Patrolling;
+    [Header("AI Sensors")]
     public Transform Target;
-    public float ChaseRange = 5f;
-    public float LostRange = 7f;
+    public float ViewRadius = 15f;       // How far can the guard see
+    [Range(0, 360)]
+    public float ViewAngle = 90f;        // FOV width, so guard can't see behind themselves
+    public LayerMask ObstructionMask;    // set layaers that obstruct view to player
 
-    int _currentIndex = 0;
-    NavMeshAgent _agent;
+    [Header("AI Settings")]
+    public float SearchDuration = 4f;    // How long to look around before giving up
+    public float SearchTurnSpeed = 120f; // How fast to spin while searching
 
-    // messing around with some flavor
-    private Color _colorRed = Color.red;
-    private Color _colorYellow = Color.yellow;
-    private Color _colorOrange = new Color(1f, 0.5f, 0f);
+    [Header("Visuals")]
+    [SerializeField] private MeshRenderer _meshRendererDot;
+    [SerializeField] private MeshRenderer _meshRendererExclamation;
 
-    [SerializeField]
-    private MeshRenderer _meshRendererDot;
-    [SerializeField]
-    private MeshRenderer _meshRendererExclamation;
+    // guard properties 
+    public StateMachine Machine { get; private set; }
+    public NavMeshAgent Agent { get; private set; }
+    public int CurrentWaypointIndex { get; set; } = 0;
+    public (MeshRenderer, MeshRenderer) GetMeshTuple => (_meshRendererDot, _meshRendererExclamation);
 
-    void Awake()
+    private void Awake()
     {
-        _agent = GetComponent<NavMeshAgent>();
-        
+        Agent = GetComponent<NavMeshAgent>();
+        Machine = new StateMachine();
     }
 
-
-    /*
-     * If the guard has a navmesh agent but there is no baked navmesh, 
-     * the agent will not be able to know where it can move or calculate a path
-     * 
-     * the difference between a path and the movement along the path is the path is the line or curve the agent will move along
-     * the movement along the path is the distance the agent will move along the path and the point along the path the agent is currently at
-     */
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    private void Start()
     {
-        if (Waypoints.Length > 0)
+        // initialize state machine and set initial state pass this guard
+        Machine.ChangeState(new GuardPatrollingState(this));
+    }
+
+    private void Update()
+    {
+        // state machine executed every update
+        if (Machine.CurrentState != null)
         {
-            _agent.SetDestination(Waypoints[_currentIndex].position);
+            Machine.CurrentState.Execute();
         }
     }
 
-    // Update is called once per frame
-    void Update()
+    // bool check if player is in FOV
+    public bool CanSeeTarget()
     {
+        if (Target == null) return false;
 
-        switch (CurrentState)
+        // distance Check
+        float distToTarget = Vector3.Distance(transform.position, Target.position);
+        if (distToTarget > ViewRadius) return false;
+
+        // angle Check FOV
+        Vector3 dirToTarget = (Target.position - transform.position).normalized;
+        if (Vector3.Angle(transform.forward, dirToTarget) > ViewAngle / 2) return false;
+
+        // cast a ray from guards position to the target, if a obstuction is hit guard can't see the player
+        if (Physics.Raycast(transform.position, dirToTarget, distToTarget, ObstructionMask))
         {
-            case GuardState.Patrolling:
-                Patrol();
-                break;
-            case GuardState.Chasing:
-                Chase();
-                break;
-            case GuardState.ReturningToPatrol:
-                ReturnToPatrol();
-                break;
+            return false; // blocked by obstruction
+        }
+
+        return true; // saw the target
+    }
+
+    // updates the color on the exclamation point
+    public void UpdateVisuals(Color newColor, (MeshRenderer dot, MeshRenderer mark) meshes)
+    {
+        if (meshes.dot != null) meshes.dot.material.color = newColor;
+        if (meshes.mark != null) meshes.mark.material.color = newColor;
+    }
+
+    // tune in values in the scene view
+    private void OnDrawGizmosSelected()
+    {
+        // draw view radius
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, ViewRadius);
+
+        // draw view angle lines
+        Vector3 viewAngleA = DirFromAngle(-ViewAngle / 2, false);
+        Vector3 viewAngleB = DirFromAngle(ViewAngle / 2, false);
+
+        Gizmos.color = Color.blue;
+        Gizmos.DrawLine(transform.position, transform.position + viewAngleA * ViewRadius);
+        Gizmos.DrawLine(transform.position, transform.position + viewAngleB * ViewRadius);
+    }
+
+    // helper function for gizmos
+    private Vector3 DirFromAngle(float angleInDegrees, bool angleIsGlobal)
+    {
+        if (!angleIsGlobal) angleInDegrees += transform.eulerAngles.y;
+        return new Vector3(Mathf.Sin(angleInDegrees * Mathf.Deg2Rad), 0, Mathf.Cos(angleInDegrees * Mathf.Deg2Rad));
+    }
+}
+
+// states are declared as classes, makes extention easy
+
+// initial and default patrol state
+public class GuardPatrollingState : IState
+{
+    private GuardPatrol _guard;
+    private Color _stateColor = Color.yellow;
+
+    public GuardPatrollingState(GuardPatrol guard) => _guard = guard;
+
+    public void Enter()
+    {
+        // can set exclamation point color on state change
+        _guard.UpdateVisuals(_stateColor, _guard.GetMeshTuple);
+        _guard.Agent.isStopped = false; // ensure we are moving
+
+        if (_guard.Waypoints.Length > 0)
+        {
+            _guard.Agent.SetDestination(_guard.Waypoints[_guard.CurrentWaypointIndex].position);
         }
     }
 
-    void Patrol()
+    public void Execute()
     {
-        if (Waypoints.Length == 0)
+        // transition to chase if player is spotted
+        if (_guard.CanSeeTarget())
         {
+            _guard.Machine.ChangeState(new GuardChasingState(_guard));
             return;
         }
-        if (_meshRendererDot != null && _meshRendererExclamation != null && 
-            _meshRendererDot.material.color != _colorYellow && 
-            _meshRendererExclamation.material.color != _colorYellow)
-        {
-            _meshRendererDot.material.color = _colorYellow;
-            _meshRendererExclamation.material.color = _colorYellow;
-        }    
-        // check if we've reached the current waypoint
-        if (!_agent.pathPending && _agent.remainingDistance < WaypointTolerance)
-        {
-            // Go to the next waypoint
-            /*
-             * Why do we check !_agent.pathfinding before reading remainingDistance?
-             * The NavMeshAgent will stop moving if the pathfinding is disabled or the path is invalid.
-             * What happens if we forget to use % waypoints.Length when incrementing the index
-             * If % is not used we'll get an out of range exception
-             */
-            _currentIndex = (_currentIndex + 1) % Waypoints.Length;
-            _agent.SetDestination(Waypoints[_currentIndex].position);
-        }
 
-        // check if target is within chase range
-        if (Target != null && Vector3.Distance(Target.position, transform.position) < ChaseRange)
+        // patrol around the points infinitely
+        if (!_guard.Agent.pathPending && _guard.Agent.remainingDistance < _guard.WaypointTolerance)
         {
-            CurrentState = GuardState.Chasing;
+            _guard.CurrentWaypointIndex = (_guard.CurrentWaypointIndex + 1) % _guard.Waypoints.Length;
+            _guard.Agent.SetDestination(_guard.Waypoints[_guard.CurrentWaypointIndex].position);
         }
     }
 
-    void Chase()
+    public void Exit() { }
+}
+
+// state for chasing player
+public class GuardChasingState : IState
+{
+    private GuardPatrol _guard;
+    private Color _stateColor = Color.red;
+
+    public GuardChasingState(GuardPatrol guard) => _guard = guard;
+
+    public void Enter()
     {
-        if (Target != null && !_agent.pathPending)
+        // set color on enter
+        _guard.UpdateVisuals(_stateColor, _guard.GetMeshTuple);
+        _guard.Agent.isStopped = false;
+    }
+
+    public void Execute()
+    {
+        // check to see if we need to transition to searching
+        if (!_guard.CanSeeTarget())
         {
-            _agent.SetDestination(Target.position);
+            _guard.Machine.ChangeState(new GuardSearchingState(_guard));
+            return;
         }
-        if (_meshRendererDot != null && _meshRendererExclamation != null &&
-            _meshRendererDot.material.color != _colorRed &&
-            _meshRendererExclamation.material.color != _colorRed)
+
+        // otherwise guard is chasing player
+        _guard.Agent.SetDestination(_guard.Target.position);
+    }
+
+    public void Exit() { }
+}
+
+// guard searching for player state
+public class GuardSearchingState : IState
+{
+    private GuardPatrol _guard;
+    private Color _stateColor = Color.cyan; // light blue to indicate search state
+    private float _timer;
+
+    public GuardSearchingState(GuardPatrol guard) => _guard = guard;
+
+    public void Enter()
+    {
+        // set color
+        _guard.UpdateVisuals(_stateColor, _guard.GetMeshTuple);
+
+        // stop moving while we look around
+        _guard.Agent.isStopped = true;
+        _timer = 0f;
+    }
+
+    public void Execute()
+    {
+        // caught sight of the player again
+        if (_guard.CanSeeTarget())
         {
-            _meshRendererDot.material.color = _colorRed;
-            _meshRendererExclamation.material.color = _colorRed;
+            _guard.Machine.ChangeState(new GuardChasingState(_guard));
+            return;
         }
-        // if target gets out of range
-        if (Target != null && Vector3.Distance(Target.position, transform.position) > LostRange)
+
+        // while timer ticks look around for player
+        _timer += Time.deltaTime;
+
+        // rotate guard
+        _guard.transform.Rotate(0, _guard.SearchTurnSpeed * Time.deltaTime, 0);
+
+        // guard isn't paid enough to care that much
+        if (_timer >= _guard.SearchDuration)
         {
-            CurrentState = GuardState.ReturningToPatrol;
+            _guard.Machine.ChangeState(new GuardReturningToPatrolState(_guard));
         }
     }
 
-    void ReturnToPatrol()
+    public void Exit()
     {
-        if (Waypoints.Length > 0 && !_agent.pathPending)
+        // re-enable movement after stopping to search
+        _guard.Agent.isStopped = false;
+    }
+}
+
+// return to patrol state
+public class GuardReturningToPatrolState : IState
+{
+    private GuardPatrol _guard;
+    private Color _stateColor = new Color(1f, 0.5f, 0f); // orange
+
+    public GuardReturningToPatrolState(GuardPatrol guard) => _guard = guard;
+
+    public void Enter()
+    {
+        // change exclamation point color
+        _guard.UpdateVisuals(_stateColor, _guard.GetMeshTuple);
+        _guard.Agent.isStopped = false;
+
+        if (_guard.Waypoints.Length > 0)
         {
-            _agent.SetDestination(Waypoints[_currentIndex].position);
-        }
-        if (_meshRendererDot != null && _meshRendererExclamation != null &&
-            _meshRendererDot.material.color != _colorOrange &&
-            _meshRendererExclamation.material.color != _colorOrange)
-        {
-            _meshRendererDot.material.color = _colorOrange;
-            _meshRendererExclamation.material.color = _colorOrange;
-        }
-        // return to closest waypoint then return to patrol
-        if (!_agent.pathPending && _agent.remainingDistance < WaypointTolerance)
-        {
-            CurrentState = GuardState.Patrolling;
+            _guard.Agent.SetDestination(_guard.Waypoints[_guard.CurrentWaypointIndex].position);
         }
     }
+
+    public void Execute()
+    {
+        // saw that pesky player again, resume chase
+        if (_guard.CanSeeTarget())
+        {
+            _guard.Machine.ChangeState(new GuardChasingState(_guard));
+            return;
+        }
+
+        // back to normal patrol
+        if (!_guard.Agent.pathPending && _guard.Agent.remainingDistance < _guard.WaypointTolerance)
+        {
+            _guard.Machine.ChangeState(new GuardPatrollingState(_guard));
+        }
+    }
+
+    public void Exit() { }
 }
