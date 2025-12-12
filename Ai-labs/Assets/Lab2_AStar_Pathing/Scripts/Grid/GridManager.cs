@@ -1,6 +1,10 @@
+using Lab2.Pathing;
 using System.Collections.Generic;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.InputSystem;
+
 namespace Lab2.Grid
 {
 
@@ -38,7 +42,7 @@ namespace Lab2.Grid
         [Header("Grid Settings")]
         [SerializeField] private int width = 10;
         [SerializeField] private int height = 10;
-        [SerializeField] private float cellSize = 1f;
+        [SerializeField] public float cellSize = 1f;
         [Header("Prefabs & Materials")]
         [SerializeField] private GameObject tilePrefab;
         [SerializeField] private Material walkableMaterial;
@@ -52,6 +56,12 @@ namespace Lab2.Grid
         private InputAction clickAction;
         private InputAction middleClickAction;
         private InputAction rightClickAction;
+        private InputAction pathfindAction;
+
+        public Pathfinder AStar = new Pathfinder();
+        public List<Node> CurrentPath = null;
+        public bool StartMoving = false;
+
         public int Width => width;
         public int Height => height;
         public float CellSize => cellSize;
@@ -84,6 +94,13 @@ namespace Lab2.Grid
             );
             rightClickAction.performed += OnRightClickPerformed;
             rightClickAction.Enable();
+            pathfindAction = new InputAction(
+            name: "Pathfind",
+            type: InputActionType.Button,
+            binding: "<Keyboard>/space"
+            );
+            pathfindAction.performed += OnPathfindPerformed;
+            pathfindAction.Enable();
         }
         private void OnDisable()
         {
@@ -101,6 +118,11 @@ namespace Lab2.Grid
             {
                 rightClickAction.performed -= OnRightClickPerformed;
                 rightClickAction.Disable();
+            }
+            if (pathfindAction != null)
+            {
+                pathfindAction.performed -= OnPathfindPerformed;
+                pathfindAction.Disable();
             }
         }
         private void GenerateGrid()
@@ -182,8 +204,10 @@ namespace Lab2.Grid
                     startNode = node;
                     SetTileMaterial(startNode, startMaterial);
                     SetWalkable(oldStartNode, true);
+                    StartMoving = false;
                 }
             }
+            
         }
 
         // right click changes goal node location and old goal node to walkable
@@ -207,9 +231,27 @@ namespace Lab2.Grid
                     goalNode = node;
                     SetTileMaterial(goalNode, goalMaterial);
                     SetWalkable(oldGoalNode, true);
+                    StartMoving = false;
                 }
             }
         }
+        
+        private void OnPathfindPerformed(InputAction.CallbackContext ctx)
+        {
+            ResetBoardColors();
+            List<Node> path = AStar.FindPath(startNode, goalNode, this);
+            if (path != null)
+            {
+                for (int i = 0; i < path.Count - 1; i++)
+                {
+                    SetTileMaterial(path[i], pathMaterial);
+                }
+                 CurrentPath = path;
+                StartMoving = true;
+            }
+        }
+
+
         public Node GetNode(int x, int y)
         {
             if (x < 0 || x >= width || y < 0 || y >= height)
@@ -252,6 +294,19 @@ namespace Lab2.Grid
             if (renderer != null && mat != null)
             {
                 renderer.material = mat;
+            }
+        }
+
+        private void ResetBoardColors()
+        {
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    if (nodes[x, y] == startNode || nodes[x, y] == goalNode) { continue; }
+                    var node = GetNode(x, y);
+                    SetTileMaterial(node, node.walkable ? walkableMaterial : wallMaterial);
+                }
             }
         }
     }
