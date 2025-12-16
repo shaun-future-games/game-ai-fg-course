@@ -1033,6 +1033,7 @@ MonoBehaviour:
   - rid: 293407232099353236
   - rid: 293407232099353237
   - rid: 293407232505676569
+  - rid: 293407251926876630
   m_OriginalGraph: {fileID: -396246336197068148, guid: e78d2004edcfde94bbdc29dfb989ea86, type: 2}
   m_IsInitialised: 0
   m_IsStarted: 0
@@ -1093,6 +1094,14 @@ MonoBehaviour:
           m_Value1: 14126805643672203124
         Name: TimeSinceLastSceen
         m_Value: 1e+9
+    - rid: 293407251926876630
+      type: {class: 'BlackboardVariable`1[[System.Boolean, mscorlib]]', ns: Unity.Behavior, asm: Unity.Behavior}
+      data:
+        GUID:
+          m_Value0: 12592493571791517243
+          m_Value1: 6001276863065078046
+        Name: HasLineOfSight
+        m_Value: 0
 --- !u!114 &1316079988
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1111,7 +1120,7 @@ MonoBehaviour:
   eyes: {fileID: 1992245216}
   occlusionMask:
     serializedVersion: 2
-    m_Bits: 128
+    m_Bits: 4294967295
   cachedTarget: {fileID: 1650557830}
 --- !u!54 &1316079989
 Rigidbody:

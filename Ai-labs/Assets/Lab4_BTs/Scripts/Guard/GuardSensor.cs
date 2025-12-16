@@ -30,8 +30,11 @@ public class GuardSensor : MonoBehaviour
     private void Awake()
     {
         // cache once; good enough for now (improve later)
-        //GameObject go = GameObject.FindGameObjectWithTag(targetTag);
-        //cachedTarget = go != null ? go.transform : null;
+        GameObject go = GameObject.FindGameObjectWithTag(targetTag);
+        if (go != null)
+        {
+            cachedTarget = go.transform;
+        }
     }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -68,7 +71,7 @@ public class GuardSensor : MonoBehaviour
         if (angle > halfAngle) return false;
 
         // Raycast to check occulusion
-        if (Physics.Raycast(eyePos, toTargetDir, out RaycastHit hit, dist, occlusionMask))
+        if (Physics.Raycast(eyePos, toTargetDir, out RaycastHit hit, viewDistance, occlusionMask))
         {
             if (hit.transform != cachedTarget) return false;
         }

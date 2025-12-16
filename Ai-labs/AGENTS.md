@@ -2,7 +2,7 @@
 - Project name: Ai-labs
 - Unity version: Unity 6000.0.60f1
 - Active game object:
-  - Name: Guard
+  - Name: Ground
   - Tag: Untagged
-  - Layer: Guard
+  - Layer: Environment
 <!-- UNITY CODE ASSIST INSTRUCTIONS END -->
